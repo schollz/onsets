@@ -1,4 +1,4 @@
-module github.com/schollz/goaubio-onset
+module github.com/schollz/onsets
 
 go 1.24.9
 

@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/schollz/goaubio-onset"
+	"github.com/schollz/onsets"
 )
 
 func main() {

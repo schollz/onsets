@@ -1,11 +1,11 @@
-# goaubio-onset
+# onsets
 
 A pure Go implementation of the aubio onset detection library for audio slice detection and analysis.
 
 ## Installation
 
 ```bash
-go get github.com/schollz/goaubio-onset
+go get github.com/schollz/onsets
 ```
 
 ## Quick Start
@@ -17,7 +17,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/schollz/goaubio-onset"
+    "github.com/schollz/onsets"
 )
 
 func main() {

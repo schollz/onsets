@@ -2,11 +2,11 @@ module slice-analyzer
 
 go 1.24.9
 
-replace github.com/schollz/goaubio-onset => ../..
+replace github.com/schollz/onsets => ../..
 
 require (
 	github.com/go-audio/wav v1.1.0
-	github.com/schollz/goaubio-onset v0.0.0-00010101000000-000000000000
+	github.com/schollz/onsets v0.0.0-00010101000000-000000000000
 	gonum.org/v1/plot v0.16.0
 )
 

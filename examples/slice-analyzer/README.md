@@ -1,6 +1,6 @@
 # Slice Analyzer Example
 
-This example program demonstrates how to use the goaubio-onset library to detect onset slices in audio files and visualize them.
+This example program demonstrates how to use the onsets library to detect onset slices in audio files and visualize them.
 
 ## Features
 
