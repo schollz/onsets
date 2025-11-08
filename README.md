@@ -1,5 +1,8 @@
 # onsets
 
+[![CI](https://github.com/schollz/onsets/actions/workflows/ci.yml/badge.svg)](https://github.com/schollz/onsets/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/schollz/onsets/branch/main/graph/badge.svg)](https://codecov.io/gh/schollz/onsets)
+
 A pure Go implementation of the aubio onset detection library for audio slice detection and analysis.
 
 <img width="1400" height="600" alt="newplot" src="https://github.com/user-attachments/assets/49afea95-5922-4c5e-8f27-e4a50bc45b74" />
