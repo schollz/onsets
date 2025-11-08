@@ -32,3 +32,9 @@ Thumbs.db
 
 # Example binary
 /example/example
+
+# Example binaries
+/examples/*/slice-analyzer
+
+# Test output images
+amen_slices*.png
