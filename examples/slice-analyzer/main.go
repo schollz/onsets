@@ -1,26 +1,25 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
-	"image/color"
 	"log"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 
 	"github.com/go-audio/wav"
 	"github.com/schollz/goaubio-onset"
-	"gonum.org/v1/plot"
-	"gonum.org/v1/plot/plotter"
-	"gonum.org/v1/plot/vg"
 )
 
 func main() {
 	// Parse command-line arguments
 	soundFile := flag.String("file", "", "Path to the sound file (required)")
 	numSlices := flag.Int("slices", 8, "Number of slices to find (default: 8)")
-	outputFile := flag.String("output", "waveform.png", "Output PNG file (default: waveform.png)")
+	outputFile := flag.String("output", "waveform.html", "Output HTML file (default: waveform.html)")
 	flag.Parse()
 
 	if *soundFile == "" {
@@ -58,13 +57,21 @@ func main() {
 		fmt.Printf("  %2d: %.4f seconds (sample %d)\n", i+1, onset, int(onset*float64(sampleRate)))
 	}
 
-	// Plot waveform with slice markers
-	err = plotWaveform(samples, sampleRate, onsets, *outputFile)
+	// Write data to JSON file
+	dataFile := "waveform_data.json"
+	err = writeDataToJSON(samples, sampleRate, onsets, dataFile)
 	if err != nil {
-		log.Fatalf("Failed to create plot: %v", err)
+		log.Fatalf("Failed to write data file: %v", err)
 	}
 
-	fmt.Printf("\nWaveform plot saved to: %s\n", *outputFile)
+	// Run plotly visualization script
+	fmt.Printf("\nGenerating visualization...\n")
+	err = runPlotlyScript(dataFile, *outputFile)
+	if err != nil {
+		log.Fatalf("Failed to generate plot: %v", err)
+	}
+
+	fmt.Printf("Waveform plot saved to: %s\n", *outputFile)
 }
 
 // readWavFileLeftChannel reads a WAV file and returns only the left channel (or mono)
@@ -101,65 +108,108 @@ func readWavFileLeftChannel(filename string) ([]float64, uint, error) {
 	return samples, sampleRate, nil
 }
 
+// onsetWithEnergy stores an onset time and its energy
+type onsetWithEnergy struct {
+	time   float64
+	energy float64
+}
+
 // findBestOnsets uses onset detection to find the best N onsets in the audio
+// The "best" onsets are those with the highest energy/loudness
 func findBestOnsets(samples []float64, sampleRate uint, targetSlices int) []float64 {
 	bufSize := uint(512)
 	hopSize := uint(256)
 	method := "hfc" // High Frequency Content method
 
-	// Try to find the best parameters to get close to targetSlices
-	threshold, minioi, onsets := findOptimalOnsetParameters(samples, sampleRate, targetSlices, method, bufSize, hopSize)
+	// Detect all onsets with relaxed parameters to get more candidates
+	allOnsets := detectAllOnsets(samples, sampleRate, method, bufSize, hopSize)
 
-	fmt.Printf("  Using threshold: %.3f, minioi: %.1f ms\n", threshold, minioi)
+	fmt.Printf("  Detected %d total onsets\n", len(allOnsets))
 
-	return onsets
-}
+	if len(allOnsets) == 0 {
+		return []float64{}
+	}
 
-// findOptimalOnsetParameters searches for parameters that produce the target number of onsets
-func findOptimalOnsetParameters(samples []float64, sampleRate uint, targetSlices int, method string, bufSize, hopSize uint) (threshold float64, minioi float64, onsets []float64) {
-	thresholdMin := 0.01
-	thresholdMax := 0.5
-	minioiMin := 10.0
-	minioiMax := 200.0
-
-	bestDiff := math.MaxInt
-	bestThreshold := 0.058
-	bestMinioi := 50.0
-	var bestOnsets []float64
-
-	// Grid search
-	thresholdSteps := 20
-	minioiSteps := 10
-
-	for t := 0; t < thresholdSteps; t++ {
-		threshold := thresholdMin + (thresholdMax-thresholdMin)*float64(t)/float64(thresholdSteps-1)
-
-		for m := 0; m < minioiSteps; m++ {
-			minioi := minioiMin + (minioiMax-minioiMin)*float64(m)/float64(minioiSteps-1)
-
-			onsets := detectOnsets(samples, sampleRate, method, bufSize, hopSize, threshold, minioi)
-
-			diff := len(onsets) - targetSlices
-			if diff < 0 {
-				diff = -diff
-			}
-
-			if diff < bestDiff {
-				bestDiff = diff
-				bestThreshold = threshold
-				bestMinioi = minioi
-				bestOnsets = onsets
-			}
-
-			// If we found the exact number, we can stop
-			if diff == 0 {
-				return bestThreshold, bestMinioi, bestOnsets
-			}
+	// Calculate energy at each onset
+	onsetsWithEnergy := make([]onsetWithEnergy, len(allOnsets))
+	for i, onsetTime := range allOnsets {
+		energy := calculateOnsetEnergy(samples, sampleRate, onsetTime)
+		onsetsWithEnergy[i] = onsetWithEnergy{
+			time:   onsetTime,
+			energy: energy,
 		}
 	}
 
-	return bestThreshold, bestMinioi, bestOnsets
+	// Sort by energy (descending)
+	sort.Slice(onsetsWithEnergy, func(i, j int) bool {
+		return onsetsWithEnergy[i].energy > onsetsWithEnergy[j].energy
+	})
+
+	// Take top N onsets
+	numToSelect := targetSlices
+	if numToSelect > len(onsetsWithEnergy) {
+		numToSelect = len(onsetsWithEnergy)
+	}
+	bestOnsets := onsetsWithEnergy[:numToSelect]
+
+	// Sort back by time for output
+	sort.Slice(bestOnsets, func(i, j int) bool {
+		return bestOnsets[i].time < bestOnsets[j].time
+	})
+
+	// Extract just the times
+	result := make([]float64, len(bestOnsets))
+	for i, onset := range bestOnsets {
+		result[i] = onset.time
+	}
+
+	return result
 }
+
+// detectAllOnsets detects all onsets with relaxed parameters
+func detectAllOnsets(samples []float64, sampleRate uint, method string, bufSize, hopSize uint) []float64 {
+	// Use low threshold and short minioi to detect all possible onsets
+	threshold := 0.02
+	minioi := 10.0 // milliseconds
+
+	return detectOnsets(samples, sampleRate, method, bufSize, hopSize, threshold, minioi)
+}
+
+// calculateOnsetEnergy calculates the RMS energy around an onset
+func calculateOnsetEnergy(samples []float64, sampleRate uint, onsetTime float64) float64 {
+	// Calculate energy in a window around the onset
+	windowMs := 50.0 // 50ms window
+	windowSamples := int(windowMs * float64(sampleRate) / 1000.0)
+
+	onsetSample := int(onsetTime * float64(sampleRate))
+
+	// Window starts at onset and extends forward
+	startSample := onsetSample
+	endSample := onsetSample + windowSamples
+
+	// Clamp to valid range
+	if startSample < 0 {
+		startSample = 0
+	}
+	if endSample > len(samples) {
+		endSample = len(samples)
+	}
+
+	// Calculate RMS energy
+	sumSquares := 0.0
+	count := 0
+	for i := startSample; i < endSample; i++ {
+		sumSquares += samples[i] * samples[i]
+		count++
+	}
+
+	if count == 0 {
+		return 0.0
+	}
+
+	return math.Sqrt(sumSquares / float64(count))
+}
+
 
 // detectOnsets processes audio samples and returns onset times in seconds
 func detectOnsets(samples []float64, sampleRate uint, method string, bufSize, hopSize uint, threshold float64, minioi float64) []float64 {
@@ -196,57 +246,40 @@ func detectOnsets(samples []float64, sampleRate uint, method string, bufSize, ho
 	return onsets
 }
 
-// plotWaveform creates a waveform plot with onset markers
-func plotWaveform(samples []float64, sampleRate uint, onsets []float64, outputFile string) error {
-	p := plot.New()
+// WaveformData represents the data structure for JSON export
+type WaveformData struct {
+	Samples    []float64 `json:"samples"`
+	SampleRate uint      `json:"sample_rate"`
+	Onsets     []float64 `json:"onsets"`
+}
 
-	p.Title.Text = "Waveform with Onset Slices"
-	p.X.Label.Text = "Time (seconds)"
-	p.Y.Label.Text = "Amplitude"
-
-	// Create waveform data points
-	waveformPoints := make(plotter.XYs, len(samples))
-	for i, sample := range samples {
-		timeSeconds := float64(i) / float64(sampleRate)
-		waveformPoints[i].X = timeSeconds
-		waveformPoints[i].Y = sample
+// writeDataToJSON writes the waveform and onset data to a JSON file
+func writeDataToJSON(samples []float64, sampleRate uint, onsets []float64, filename string) error {
+	data := WaveformData{
+		Samples:    samples,
+		SampleRate: sampleRate,
+		Onsets:     onsets,
 	}
 
-	// Add waveform line
-	waveformLine, err := plotter.NewLine(waveformPoints)
+	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to create waveform line: %w", err)
-	}
-	waveformLine.LineStyle.Color = color.RGBA{R: 200, G: 200, B: 200, A: 255} // Light gray
-	waveformLine.LineStyle.Width = vg.Points(0.5)
-	p.Add(waveformLine)
-
-	// Add vertical lines for each onset
-	for _, onset := range onsets {
-		line, err := plotter.NewLine(plotter.XYs{
-			{X: onset, Y: -1.0},
-			{X: onset, Y: 1.0},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create onset line: %w", err)
-		}
-		line.LineStyle.Color = color.White
-		line.LineStyle.Width = vg.Points(2)
-		p.Add(line)
+		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	// Set background to black for better contrast with white lines
-	p.BackgroundColor = color.Black
-	p.X.Tick.Label.Color = color.White
-	p.Y.Tick.Label.Color = color.White
-	p.X.Label.TextStyle.Color = color.White
-	p.Y.Label.TextStyle.Color = color.White
-	p.Title.TextStyle.Color = color.White
-
-	// Save the plot
-	if err := p.Save(12*vg.Inch, 4*vg.Inch, outputFile); err != nil {
-		return fmt.Errorf("failed to save plot: %w", err)
+	err = os.WriteFile(filename, jsonData, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write JSON file: %w", err)
 	}
 
+	return nil
+}
+
+// runPlotlyScript executes the Python plotly script to generate the visualization
+func runPlotlyScript(dataFile, outputFile string) error {
+	cmd := exec.Command("python3", "plot_waveform.py", dataFile, outputFile)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to run plotly script: %w\nOutput: %s", err, string(output))
+	}
 	return nil
 }

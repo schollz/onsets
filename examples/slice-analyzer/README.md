@@ -7,10 +7,19 @@ This example program demonstrates how to use the goaubio-onset library to detect
 - Analyzes audio files to find onset points (slices)
 - Uses only the left channel for stereo files (no channel merging)
 - Automatically finds optimal detection parameters to match the desired number of slices
-- Generates a waveform plot with:
+- Generates an interactive waveform plot (HTML) with:
   - Light gray waveform visualization
-  - White vertical lines at each detected onset/slice point
-  - Black background for contrast
+  - Red vertical lines at each detected onset/slice point
+  - Dark theme with hover information
+  - Interactive zooming and panning capabilities
+
+## Requirements
+
+- Go 1.16 or higher
+- Python 3.x with plotly installed:
+  ```bash
+  pip install plotly
+  ```
 
 ## Building
 
@@ -21,14 +30,14 @@ go build
 ## Usage
 
 ```bash
-./slice-analyzer -file <path-to-audio-file> [-slices N] [-output output.png]
+./slice-analyzer -file <path-to-audio-file> [-slices N] [-output output.html]
 ```
 
 ### Arguments
 
 - `-file` (required): Path to the audio file (WAV format)
 - `-slices` (optional): Number of slices to find (default: 8)
-- `-output` (optional): Output PNG file path (default: waveform.png)
+- `-output` (optional): Output HTML file path (default: waveform.html)
 
 ### Examples
 
@@ -39,15 +48,15 @@ Find 8 slices in an audio file:
 
 Find 16 slices and save to a custom location:
 ```bash
-./slice-analyzer -file song.wav -slices 16 -output my_slices.png
+./slice-analyzer -file song.wav -slices 16 -output my_slices.html
 ```
 
 ## How It Works
 
 1. **Audio Loading**: The program reads the audio file and extracts only the left channel (or mono channel if the file is mono)
-2. **Onset Detection**: Uses the High Frequency Content (HFC) method to detect onsets
-3. **Parameter Optimization**: Automatically searches for optimal threshold and minimum inter-onset interval parameters to find approximately the requested number of slices
-4. **Visualization**: Creates a waveform plot with the detected onset points marked as vertical white lines
+2. **Onset Detection**: Uses the High Frequency Content (HFC) method to detect all onsets, then selects the N strongest ones based on energy
+3. **Data Export**: Writes the waveform samples and onset times to a JSON file
+4. **Visualization**: Calls a Python script that uses Plotly to create an interactive HTML visualization with the detected onset points marked as red vertical lines
 
 ## Notes
 
