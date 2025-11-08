@@ -160,13 +160,28 @@ Run benchmarks:
 go test -bench=.
 ```
 
-## Example
+## Examples
 
-See the [example](./example/main.go) directory for a complete working example.
+### Basic Usage Example
+
+See the [example](./example/main.go) directory for a complete working example of onset detection.
 
 ```bash
 cd example
 go run main.go
+```
+
+### Slice Analyzer with Visualization
+
+The [slice-analyzer](./examples/slice-analyzer/) example demonstrates:
+- Loading audio files (left channel only, no merging for stereo)
+- Automatic parameter optimization to find N onset slices
+- Generating waveform plots with onset markers
+
+```bash
+cd examples/slice-analyzer
+go build
+./slice-analyzer -file ../../amen.wav -slices 8 -output waveform.png
 ```
 
 ## About Aubio
