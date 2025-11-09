@@ -327,3 +327,131 @@ func TestAnalyzeSlicesMethodComparison(t *testing.T) {
 	t.Logf("HFC detected %d onsets, Consensus detected %d onsets",
 		len(hfcResult.Onsets), len(consensusResult.Onsets))
 }
+
+func TestMinimumSpacing(t *testing.T) {
+	wavFile := "amen.wav"
+
+	t.Run("WithMinimumSpacing", func(t *testing.T) {
+		// First, get all onsets without minimum spacing
+		optionsWithout := SliceAnalyzerOptions{
+			Method:            "hfc",
+			UseMinimumSpacing: false,
+			Optimize:          false, // Disable optimization for clearer results
+		}
+
+		resultWithout, err := AnalyzeSlices(wavFile, optionsWithout)
+		if err != nil {
+			t.Fatalf("AnalyzeSlices failed: %v", err)
+		}
+
+		// Now get onsets with minimum spacing of 80ms
+		optionsWith := SliceAnalyzerOptions{
+			Method:            "hfc",
+			UseMinimumSpacing: true,
+			MinimumSpacing:    80.0, // 80ms
+			Optimize:          false, // Disable optimization for clearer results
+		}
+
+		resultWith, err := AnalyzeSlices(wavFile, optionsWith)
+		if err != nil {
+			t.Fatalf("AnalyzeSlices failed: %v", err)
+		}
+
+		t.Logf("Without minimum spacing: %d onsets", len(resultWithout.Onsets))
+		t.Logf("With 80ms minimum spacing: %d onsets", len(resultWith.Onsets))
+
+		// With minimum spacing should have fewer or equal onsets
+		if len(resultWith.Onsets) > len(resultWithout.Onsets) {
+			t.Errorf("Expected minimum spacing to reduce or maintain onset count, got %d onsets (was %d)",
+				len(resultWith.Onsets), len(resultWithout.Onsets))
+		}
+
+		// Verify that all onsets in the filtered result have at least 80ms spacing
+		minimumSpacingSec := 0.080 // 80ms in seconds
+		for i := 1; i < len(resultWith.Onsets); i++ {
+			spacing := resultWith.Onsets[i] - resultWith.Onsets[i-1]
+			if spacing < minimumSpacingSec-0.001 { // Allow small floating point error
+				t.Errorf("Onset at index %d has spacing of %.4fs (%.1fms), expected at least %.4fs (%.1fms)",
+					i, spacing, spacing*1000, minimumSpacingSec, minimumSpacingSec*1000)
+			}
+		}
+	})
+
+	t.Run("WithDifferentSpacingValues", func(t *testing.T) {
+		// Test with a very small spacing (should keep most onsets)
+		optionsSmall := SliceAnalyzerOptions{
+			Method:            "hfc",
+			UseMinimumSpacing: true,
+			MinimumSpacing:    10.0, // 10ms
+			Optimize:          false,
+		}
+
+		resultSmall, err := AnalyzeSlices(wavFile, optionsSmall)
+		if err != nil {
+			t.Fatalf("AnalyzeSlices failed: %v", err)
+		}
+
+		// Test with a large spacing (should filter many onsets)
+		optionsLarge := SliceAnalyzerOptions{
+			Method:            "hfc",
+			UseMinimumSpacing: true,
+			MinimumSpacing:    200.0, // 200ms
+			Optimize:          false,
+		}
+
+		resultLarge, err := AnalyzeSlices(wavFile, optionsLarge)
+		if err != nil {
+			t.Fatalf("AnalyzeSlices failed: %v", err)
+		}
+
+		t.Logf("With 10ms spacing: %d onsets", len(resultSmall.Onsets))
+		t.Logf("With 200ms spacing: %d onsets", len(resultLarge.Onsets))
+
+		// Larger spacing should result in fewer onsets
+		if len(resultLarge.Onsets) > len(resultSmall.Onsets) {
+			t.Errorf("Expected larger spacing to have fewer onsets, got %d (small spacing had %d)",
+				len(resultLarge.Onsets), len(resultSmall.Onsets))
+		}
+
+		// Verify spacing constraint for large spacing
+		minimumSpacingSec := 0.200 // 200ms in seconds
+		for i := 1; i < len(resultLarge.Onsets); i++ {
+			spacing := resultLarge.Onsets[i] - resultLarge.Onsets[i-1]
+			if spacing < minimumSpacingSec-0.001 { // Allow small floating point error
+				t.Errorf("Onset at index %d has spacing of %.4fs (%.1fms), expected at least %.4fs (%.1fms)",
+					i, spacing, spacing*1000, minimumSpacingSec, minimumSpacingSec*1000)
+			}
+		}
+	})
+
+	t.Run("MinimumSpacingDisabled", func(t *testing.T) {
+		// Verify that UseMinimumSpacing=false doesn't filter
+		options := SliceAnalyzerOptions{
+			Method:            "hfc",
+			UseMinimumSpacing: false,
+			MinimumSpacing:    80.0, // This should be ignored
+			Optimize:          false,
+		}
+
+		result, err := AnalyzeSlices(wavFile, options)
+		if err != nil {
+			t.Fatalf("AnalyzeSlices failed: %v", err)
+		}
+
+		// Count how many consecutive onsets are closer than 80ms
+		closePairs := 0
+		minimumSpacingSec := 0.080
+		for i := 1; i < len(result.Onsets); i++ {
+			spacing := result.Onsets[i] - result.Onsets[i-1]
+			if spacing < minimumSpacingSec {
+				closePairs++
+			}
+		}
+
+		// When minimum spacing is disabled, we expect some onsets to be closer than 80ms
+		t.Logf("Found %d pairs of onsets closer than 80ms (minimum spacing disabled)", closePairs)
+		if closePairs == 0 && len(result.Onsets) > 3 {
+			t.Log("Warning: No onsets closer than 80ms found, but minimum spacing was disabled")
+		}
+	})
+}

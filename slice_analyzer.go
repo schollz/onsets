@@ -40,6 +40,14 @@ type SliceAnalyzerOptions struct {
 	// for a cluster to be considered valid when using the "consensus" method.
 	// Default is 3. Only applies when Method is "consensus".
 	MinConsensusClusterSize int
+	// UseMinimumSpacing enables minimum spacing filter between slices.
+	// When true, if multiple slices fall within MinimumSpacing window, only the first is kept.
+	// Default is true.
+	UseMinimumSpacing bool
+	// MinimumSpacing specifies the minimum spacing in milliseconds between slices.
+	// If multiple slices fall within this window, only the first is kept.
+	// Default is 80.0 ms. Only applies when UseMinimumSpacing is true.
+	MinimumSpacing float64
 }
 
 // DefaultSliceAnalyzerOptions returns default options for slice analysis
@@ -50,6 +58,8 @@ func DefaultSliceAnalyzerOptions() SliceAnalyzerOptions {
 		OptimizeWindowMs:        100.0,
 		Method:                  "hfc",
 		MinConsensusClusterSize: 3,
+		UseMinimumSpacing:       true,
+		MinimumSpacing:          80.0,
 	}
 }
 
@@ -92,6 +102,11 @@ func AnalyzeSlices(wavFile string, options SliceAnalyzerOptions) (*SliceAnalyzer
 	// Optimize onset positions if requested
 	if options.Optimize && len(onsets) > 0 {
 		onsets = optimizeOnsetPositions(samples, sampleRate, onsets, options.OptimizeWindowMs)
+	}
+
+	// Apply minimum spacing filter if requested
+	if options.UseMinimumSpacing && len(onsets) > 0 {
+		onsets = applyMinimumSpacing(onsets, options.MinimumSpacing)
 	}
 
 	return &SliceAnalyzerResult{
@@ -441,6 +456,34 @@ func optimizeOnsetPositions(samples []float64, sampleRate uint, onsets []float64
 	}
 
 	return optimized
+}
+
+// applyMinimumSpacing filters onsets to ensure minimum spacing between them.
+// If multiple onsets fall within the minimum spacing window, only the first is kept.
+func applyMinimumSpacing(onsets []float64, minimumSpacingMs float64) []float64 {
+	if len(onsets) == 0 {
+		return onsets
+	}
+
+	// Convert minimum spacing from milliseconds to seconds
+	minimumSpacingSec := minimumSpacingMs / 1000.0
+
+	// First onset is always kept
+	filtered := []float64{onsets[0]}
+
+	// Check each subsequent onset
+	for i := 1; i < len(onsets); i++ {
+		// Calculate the time difference from the last kept onset
+		timeDiff := onsets[i] - filtered[len(filtered)-1]
+
+		// Only keep this onset if it's far enough from the previous one
+		if timeDiff >= minimumSpacingSec {
+			filtered = append(filtered, onsets[i])
+		}
+		// Otherwise, skip this onset (it's too close to the previous one)
+	}
+
+	return filtered
 }
 
 // findOptimalOnsetPosition finds the exact onset position by locating the midpoint

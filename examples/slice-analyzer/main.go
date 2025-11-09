@@ -21,6 +21,8 @@ func main() {
 	optimizeWindowMs := flag.Float64("optimize-window", 100.0, "Window size in milliseconds for onset optimization (default: 100.0)")
 	method := flag.String("method", "hfc", "Onset detection method: hfc, energy, complex, phase, wphase, specdiff, kl, mkl, specflux, consensus (default: hfc)")
 	minConsensusClusterSize := flag.Int("min-consensus-cluster", 3, "Minimum cluster size for consensus method (default: 3)")
+	useMinimumSpacing := flag.Bool("use-minimum-spacing", true, "Enable minimum spacing filter between slices (default: true)")
+	minimumSpacing := flag.Float64("minimum-spacing", 80.0, "Minimum spacing in milliseconds between slices (default: 80.0)")
 	flag.Parse()
 
 	if *soundFile == "" {
@@ -41,6 +43,8 @@ func main() {
 		OptimizeWindowMs:        *optimizeWindowMs,
 		Method:                  *method,
 		MinConsensusClusterSize: *minConsensusClusterSize,
+		UseMinimumSpacing:       *useMinimumSpacing,
+		MinimumSpacing:          *minimumSpacing,
 	}
 
 	result, err := onset.AnalyzeSlices(*soundFile, options)
